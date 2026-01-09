@@ -7,4 +7,10 @@ Script to compare two XML files and create a new file that only contains new dat
   - folgenden Code kopieren: `python3 --version`
   - App TERMINAL öffnen
   - Code einfügen und mit ENTER bestätigen
-  - wenn Ausgabe **Python 3.x.y** (oder höher), dann weiter zu Punkt 2.
+  - wenn Ausgabe **"Python 3.x.y"** (oder höher), dann weiter zu Punkt 2.
+
+### 2. lxml
+- lxml installieren
+  - folgenden Code kopieren: `pip3 install lxml`
+  - App TERMINAL öffnen
+  - Code einfügen und mit ENTER bestätigen
