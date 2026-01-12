@@ -21,4 +21,5 @@ Script to compare two XML files and create a new file that only contains new dat
 ## Benutzung
 - altes + neues XML in Ordner **INPUT** kopieren
 - Datei **run_xml_delta.applescript** doppelklicken und in Skripteditor ausführen (Play-Button, oben rechts)
-![Skripteditor](image01.png)
+  ![Skripteditor](image01.png)
+- neues XML wird in Ordner **OUTPUT** generiert
