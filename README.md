@@ -14,3 +14,8 @@ Script to compare two XML files and create a new file that only contains new dat
   - folgenden Code kopieren: `pip3 install lxml`
   - App TERMINAL öffnen
   - Code einfügen und mit ENTER bestätigen
+
+## Benutzung
+- altes + neues XML in Ordner **INPUT** kopieren
+- Datei **run_xml_delta.applescript** doppelklicken und in Skripteditor ausführen (Play-Button, oben rechts)
+![Skripteditor](image01.png)
