@@ -7,8 +7,10 @@ Script to compare two XML files and create a new file that only contains new dat
   - folgenden Code kopieren: `python3 --version`
   - App TERMINAL öffnen
   - Code einfügen und mit ENTER bestätigen
-  - wenn Ausgabe **"Python 3.x.y"** (oder höher), dann weiter zu Punkt 2.
-  - Python 3 von hier herunterladen und installieren: https://www.python.org/downloads/macos/
+  - wenn Ausgabe **"Python 3.x.y"** (oder höher):
+    - weiter zu Punkt 2.
+  - andernfalls:
+    - Python 3 von hier herunterladen und installieren: https://www.python.org/downloads/macos/
 
 ### 2. lxml
 - lxml installieren
