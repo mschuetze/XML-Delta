@@ -33,3 +33,6 @@ ACHTUNG: Für die Nutzung des Skripts benötigen wir sowohl das aktuelle XML, al
   ![Skripteditor](image01.png)
 - neues XML wird in Ordner **OUTPUT** generiert
 - diese XML-Datei in den Projektordner verschieben / kopieren
+- weiter mit dem regulären SoMe-Programmgrafiken-Workflow
+
+> Bitte alle XML-Dateien im Projektordner aufbewahren und nicht löschen!
