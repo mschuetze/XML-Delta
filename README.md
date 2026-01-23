@@ -35,4 +35,5 @@ ACHTUNG: Für die Nutzung des Skripts benötigen wir sowohl das aktuelle XML, al
 - diese XML-Datei in den Projektordner verschieben / kopieren
 - weiter mit dem regulären SoMe-Programmgrafiken-Workflow
 
+> [!IMPORTANT]
 > Bitte alle XML-Dateien im Projektordner aufbewahren und nicht löschen!
