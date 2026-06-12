@@ -1,4 +1,4 @@
--- v0.3.2
+-- v0.3.3
 #!/usr/bin/env osascript
 
 set scriptPath to POSIX path of (path to me)
@@ -21,14 +21,11 @@ set deltaXML to scriptDirectory & "/Output/" & deltaFileName
 set command to "cd '" & scriptDirectory & "' && python3 '" & pythonScript & "' '" & oldXML & "' '" & newXML & "' '" & deltaXML & "' 2>&1 | tee /tmp/xml_delta.log"
 
 -- ALLES anzeigen (stdout + stderr)
-set result to do shell script command
+set pythonOutput to do shell script command
 
-display dialog "Fertig!
+set dialogResult to display dialog "Fertig!" & return & "--------" & return & return & pythonOutput buttons {"Terminal šffnen", "OK"} default button "OK"
 
-Log: /tmp/xml_delta.log
-" & result buttons {"Terminal šffnen", "OK"} default button "OK"
-
-if button returned of result is "Terminal šffnen" then
+if button returned of dialogResult is "Terminal šffnen" then
 	do shell script "open -a Terminal /tmp/xml_delta.log"
 end if
 

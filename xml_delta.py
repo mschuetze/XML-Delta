@@ -1,9 +1,12 @@
-# v0.4.1
+# v0.4.2
 
 #!/usr/bin/env python3
 from lxml import etree
 import sys
 import argparse
+
+# DEBUG konfigurieren: False = normaler Modus, True = verbose Debug-Modus
+DEBUG_MODE = False
 
 
 def get_text_ns(el, name):
@@ -34,21 +37,24 @@ def make_key(root, block, block_type):
     return '::'.join(parts) if parts else None
 
 
-def blocks_by_key(root, block_type):
-    """Zeigt alle gefundenen Blöcke."""
+def blocks_by_key(root, block_type, debug=False):
+    """Zeigt alle gefundenen Blöcke, optional mit Ausgabe."""
     blocks = {}
-    print(f"\n📂 {block_type.title()}s sammeln...")
+    if debug:
+        print(f"\n📂 {block_type.title()}s sammeln...")
     for i, block in enumerate(root.xpath(f".//{block_type}"), 1):
         key = make_key(root, block, block_type)
         if key:
             blocks[key] = block
-            print(f"  {i:2d}. '{key}'")
+            if debug:
+                print(f"  {i:2d}. '{key}'")
         else:
-            print(f"  {i:2d}. [ohne Key]")
+            if debug:
+                print(f"  {i:2d}. [ohne Key]")
     return blocks
 
 
-def elements_equal(block1, block2, block_type):
+def elements_equal(block1, block2, block_type, debug=False):
     """Vergleicht Felder mit Diff-Details."""
     if block_type == 'item':
         fields = ['title', 'firstName', 'lastName', 'speakers']
@@ -59,21 +65,23 @@ def elements_equal(block1, block2, block_type):
         v1 = get_text_ns(block1, f)
         v2 = get_text_ns(block2, f)
         if v1 != v2:
-            print(f"     ❌ '{f}': '{v1}' → '{v2}'")
+            if debug:
+                print(f"     ❌ '{f}': '{v1}' → '{v2}'")
             return False
-    print("     ✅ Alle Felder identisch")
+    if debug:
+        print("     ✅ Alle Felder identisch")
     return True
 
 
 def main():
-    parser = argparse.ArgumentParser(description='XML-Delta v1.3 (Debug ON)')
+    parser = argparse.ArgumentParser(description='XML-Delta v1.3')
     parser.add_argument('old', help='Alte XML')
     parser.add_argument('new', help='Neue XML')
     parser.add_argument('delta', help='Delta XML')
     parser.add_argument('--dry-run', action='store_true', help='Nur Preview')
+    parser.add_argument('--debug', action='store_true', default=DEBUG_MODE, help='Verbose Debug-Modus')
     args = parser.parse_args()
-
-    print("🚀 XML-Delta v1.3 Debug-Modus")
+    debug = args.debug
 
     # Laden
     try:
@@ -86,33 +94,51 @@ def main():
 
     # Typ erkennen
     block_type = detect_structure(old_root)[1]
-    print(f"📋 Format: {block_type}s")
 
     # Blöcke sammeln
-    old_blocks = blocks_by_key(old_root, block_type)
-    new_blocks = blocks_by_key(new_root, block_type)
+    old_blocks = blocks_by_key(old_root, block_type, debug=debug)
+    new_blocks = blocks_by_key(new_root, block_type, debug=debug)
 
-    print(f"\n📊 Alt: {len(old_blocks)} | Neu: {len(new_blocks)}")
+    if debug:
+        print(f"\n📊 XML-Vergleich:\nAltes XML: {len(old_blocks)} Einträge\nNeues XML: {len(new_blocks)} Einträge")
+
+    # Delta zählen
+    delta_count = 0
+    for key in new_blocks:
+        old_block = old_blocks.get(key)
+        if old_block is None:
+            delta_count += 1
+        else:
+            changed = not elements_equal(old_block, new_blocks[key], block_type, debug=False)
+            if changed:
+                delta_count += 1
+
+    print(f"\n📦 DELTA: {delta_count} Einträge")
 
     # Delta bauen
     delta_root = etree.Element(new_root.tag, attrib=dict(new_root.attrib))
-    delta_count = 0
 
     print(f"\n🔍 Delta-Berechnung...")
+
     for key in new_blocks:
-        print(f"\n--- Key '{key}' ---")
         old_block = old_blocks.get(key)
         if old_block is None:
-            print("  ➕ NEU!")
-            delta_root.append(new_blocks[key])
-            delta_count += 1
-        else:
-            if elements_equal(old_block, new_blocks[key], block_type):
-                print("  ⏭️  GLEICH (überspringen)")
+            if debug:
+                print(f"\n--- Key '{key}' ---")
+                print("  ➕ NEU!")
             else:
-                print("  ✏️  GÄNDERT!")
+                print(f"➕ NEU: '{key}'")
+            delta_root.append(new_blocks[key])
+            # delta_count already gezählt
+        else:
+            changed = not elements_equal(old_block, new_blocks[key], block_type, debug=debug)
+            if changed:
+                if debug:
+                    print("  ✏️  GÄNDERT!")
+                else:
+                    print(f"✏️ GEÄNDERT: '{key}'")
                 delta_root.append(new_blocks[key])
-                delta_count += 1
+                # delta_count already gezählt
 
     # Gelöschte
     deleted = set(old_blocks.keys()) - set(new_blocks.keys())
@@ -122,8 +148,6 @@ def main():
             print(f"  - '{d}'")
     else:
         print(f"\nℹ️  Keine Löschungen")
-
-    print(f"\n📦 DELTA: {delta_count} Einträge")
 
     # Ausgabe
     etree.indent(delta_root, space="  ")
@@ -135,7 +159,7 @@ def main():
         print(etree.tostring(delta_tree, pretty_print=True, encoding='unicode', xml_declaration=True))
     else:
         delta_tree.write(args.delta, encoding='UTF-8', xml_declaration=True, pretty_print=True)
-        print(f"\n✅ '{args.delta}' geschrieben ({delta_count} Einträge)")
-
+        if debug:
+            print(f"\n✅ '{args.delta}' geschrieben ({delta_count} Einträge)")
 if __name__ == '__main__':
     main()
