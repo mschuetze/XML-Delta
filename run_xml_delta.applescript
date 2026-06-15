@@ -1,5 +1,5 @@
--- v0.3.3
 #!/usr/bin/env osascript
+-- v0.3.3
 
 set scriptPath to POSIX path of (path to me)
 set scriptDirectory to do shell script "dirname '" & scriptPath & "'"

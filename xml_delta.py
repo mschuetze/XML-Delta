@@ -1,9 +1,11 @@
-# v0.4.2
+# v0.4.3
 
 #!/usr/bin/env python3
 from lxml import etree
 import sys
 import argparse
+from copy import deepcopy
+import re
 
 # DEBUG konfigurieren: False = normaler Modus, True = verbose Debug-Modus
 DEBUG_MODE = False
@@ -115,8 +117,8 @@ def main():
 
     print(f"\n📦 DELTA: {delta_count} Einträge")
 
-    # Delta bauen
-    delta_root = etree.Element(new_root.tag, attrib=dict(new_root.attrib))
+    # Delta bauen (Root mit Namespaces von new_root)
+    delta_root = etree.Element(new_root.tag, attrib=dict(new_root.attrib), nsmap=new_root.nsmap)
 
     print(f"\n🔍 Delta-Berechnung...")
 
@@ -128,8 +130,7 @@ def main():
                 print("  ➕ NEU!")
             else:
                 print(f"➕ NEU: '{key}'")
-            delta_root.append(new_blocks[key])
-            # delta_count already gezählt
+            delta_root.append(deepcopy(new_blocks[key]))
         else:
             changed = not elements_equal(old_block, new_blocks[key], block_type, debug=debug)
             if changed:
@@ -137,8 +138,7 @@ def main():
                     print("  ✏️  GÄNDERT!")
                 else:
                     print(f"✏️ GEÄNDERT: '{key}'")
-                delta_root.append(new_blocks[key])
-                # delta_count already gezählt
+                delta_root.append(deepcopy(new_blocks[key]))
 
     # Gelöschte
     deleted = set(old_blocks.keys()) - set(new_blocks.keys())
@@ -149,16 +149,20 @@ def main():
     else:
         print(f"\nℹ️  Keine Löschungen")
 
-    # Ausgabe
-    etree.indent(delta_root, space="  ")
-    delta_tree = etree.ElementTree(delta_root)
+    # Ausgabe: minified, mit Namespaces erhalten und XML-Deklaration in doppelten Anführungszeichen
+    # Erzeuge Bytes, passe ggf. Deklaration an, und schreibe dann als UTF-8 Text
+    xml_bytes = etree.tostring(delta_root, pretty_print=False, xml_declaration=True, encoding='UTF-8')
+    xml_text = xml_bytes.decode('utf-8')
+    xml_text = re.sub(r"<\?xml version=['\"]1.0['\"] encoding=['\"]UTF-8['\"]\?>",
+                      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>", xml_text)
 
     if args.dry_run:
         print(f"\n{'='*50}")
         print("DELTA-PREVIEW:")
-        print(etree.tostring(delta_tree, pretty_print=True, encoding='unicode', xml_declaration=True))
+        print(xml_text)
     else:
-        delta_tree.write(args.delta, encoding='UTF-8', xml_declaration=True, pretty_print=True)
+        with open(args.delta, 'w', encoding='utf-8') as fh:
+            fh.write(xml_text)
         if debug:
             print(f"\n✅ '{args.delta}' geschrieben ({delta_count} Einträge)")
 if __name__ == '__main__':
