@@ -1,11 +1,17 @@
 #!/usr/bin/env osascript
--- v0.3.4
+-- v0.3.5
 
 set scriptPath to POSIX path of (path to me)
 set scriptDirectory to do shell script "dirname '" & scriptPath & "'"
 
 set pythonScript to scriptDirectory & "/xml_delta.py"
 set inputFolder to POSIX file (scriptDirectory & "/Input")
+
+set inputXMLCount to do shell script "find " & quoted form of (scriptDirectory & "/Input") & " -maxdepth 1 -type f -iname '*.xml' | wc -l"
+if inputXMLCount is not "2" then
+	display dialog "Im Ordner Input müssen sich exakt 2 XML-Dateien befinden." & return & "Gefunden: " & inputXMLCount buttons {"OK"} default button "OK" with icon stop
+	return
+end if
 
 set oldXML to POSIX path of (choose file with prompt "ALTE XML:" default location inputFolder)
 set newXML to POSIX path of (choose file with prompt "NEUE XML:" default location inputFolder)
