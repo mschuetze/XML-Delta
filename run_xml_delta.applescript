@@ -5,37 +5,20 @@ set scriptPath to POSIX path of (path to me)
 set scriptDirectory to do shell script "dirname '" & scriptPath & "'"
 
 set pythonScript to scriptDirectory & "/xml_delta.py"
-set inputFolder to POSIX file (scriptDirectory & "/Input")
+set logPath to scriptDirectory & "/Output/xml_delta.txt"
 
-set inputXMLCount to do shell script "find " & quoted form of (scriptDirectory & "/Input") & " -maxdepth 1 -type f -iname '*.xml' | wc -l"
-if inputXMLCount is not "2" then
-	display dialog "Im Ordner Input mŸssen sich exakt 2 XML-Dateien befinden." & return & "Gefunden: " & inputXMLCount buttons {"OK"} default button "OK" with icon stop
-	return
-end if
+set command to "cd '" & scriptDirectory & "' && python3 '" & pythonScript & "' >/dev/null 2>&1"
 
-set oldXML to POSIX path of (choose file with prompt "ALTE XML:" default location inputFolder)
-set newXML to POSIX path of (choose file with prompt "NEUE XML:" default location inputFolder)
-
-set oldFileName to do shell script "basename '" & oldXML & "'"
-set newFileName to do shell script "basename '" & newXML & "'"
-set oldBaseName to do shell script "basename '" & oldFileName & "' .xml"
-set newBaseName to do shell script "basename '" & newFileName & "' .xml"
-set deltaFileName to oldBaseName & "__" & newBaseName & "__delta.xml"
-set deltaXML to scriptDirectory & "/Output/" & deltaFileName
-
--- ?? DEBUG: VollstŠndiges Terminal-Output!
-set command to "cd '" & scriptDirectory & "' && python3 '" & pythonScript & "' '" & oldXML & "' '" & newXML & "' '" & deltaXML & "' 2>&1 | tee /tmp/xml_delta.log"
-
--- ALLES anzeigen (stdout + stderr)
-set pythonOutput to do shell script command
-
-set dialogResult to display dialog "Fertig!" & return & "--------" & return & return & pythonOutput buttons {"Terminal šffnen", "OK"} default button "OK"
-
-if button returned of dialogResult is "Terminal šffnen" then
-	tell application "Terminal"
-		activate
-		do script "cat " & quoted form of "/tmp/xml_delta.log"
-	end tell
-end if
-
-display notification "Delta: " & deltaFileName with title "? Fertig"
+try
+	do shell script command
+	display dialog "XML-Delta erfolgreich! Eine Log-Datei wurde erzeugt." buttons {"OK"} default button "OK"
+	do shell script "open " & quoted form of logPath
+	display notification "XML-Delta abgeschlossen" with title "Fertig"
+on error errorMessage
+	try
+		set logContent to do shell script "cat " & quoted form of logPath
+	on error
+		set logContent to errorMessage
+	end try
+	display dialog "XML-Delta fehlgeschlagen:" & return & logContent buttons {"OK"} default button "OK" with icon stop
+end try
