@@ -1,4 +1,4 @@
-# v0.4.4
+# v0.5.0
 
 #!/usr/bin/env python3
 from lxml import etree
@@ -6,9 +6,25 @@ import sys
 import argparse
 from copy import deepcopy
 import re
+from pathlib import Path
+from contextlib import redirect_stderr, redirect_stdout
 
 # DEBUG konfigurieren: False = normaler Modus, True = verbose Debug-Modus
 DEBUG_MODE = False
+
+
+class Tee:
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, text):
+        for stream in self.streams:
+            stream.write(text)
+        return len(text)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
 
 
 def get_text_ns(el, name):
@@ -76,15 +92,75 @@ def elements_equal(block1, block2, block_type, debug=False):
     return True
 
 
+def find_input_files(input_dir):
+    xml_files = sorted(
+        path for path in Path(input_dir).iterdir()
+        if path.is_file() and path.suffix.lower() == '.xml'
+    )
+
+    if len(xml_files) != 2:
+        print("❌ Im Ordner Input müssen sich exakt 2 XML-Dateien befinden.")
+        print(f"   Gefunden: {len(xml_files)}")
+        sys.exit(1)
+    return xml_files
+
+
+def validate_input_files(old_path, new_path):
+    input_dir = Path(old_path).resolve().parent
+    xml_files = find_input_files(input_dir)
+
+    selected_files = {Path(old_path).resolve(), Path(new_path).resolve()}
+    if selected_files != set(xml_files):
+        print("❌ Es müssen genau die beiden XML-Dateien aus dem Ordner Input verwendet werden.")
+        sys.exit(1)
+
+
+def order_input_files(old_path, new_path):
+    old_file = Path(old_path).resolve()
+    new_file = Path(new_path).resolve()
+    old_stat = old_file.stat()
+    new_stat = new_file.stat()
+    old_creation_time = getattr(old_stat, 'st_birthtime', old_stat.st_ctime)
+    new_creation_time = getattr(new_stat, 'st_birthtime', new_stat.st_ctime)
+
+    if old_creation_time == new_creation_time:
+        print("❌ Die Erstellzeiten der beiden XML-Dateien sind identisch.")
+        print("   ALTE und NEUE Datei können nicht automatisch bestimmt werden.")
+        sys.exit(1)
+
+    if old_creation_time > new_creation_time:
+        return str(new_file), str(old_file)
+    return str(old_file), str(new_file)
+
+
+def default_delta_path(old_path, new_path):
+    output_dir = Path(__file__).resolve().parent / 'Output'
+    delta_name = f"{Path(old_path).stem}__{Path(new_path).stem}__delta.xml"
+    return str(output_dir / delta_name)
+
+
 def main():
     parser = argparse.ArgumentParser(description='XML-Delta v1.3')
-    parser.add_argument('old', help='Alte XML')
-    parser.add_argument('new', help='Neue XML')
-    parser.add_argument('delta', help='Delta XML')
+    parser.add_argument('old', nargs='?', help='XML-Datei (optional, Standard: Input-Ordner)')
+    parser.add_argument('new', nargs='?', help='XML-Datei (optional, Standard: Input-Ordner)')
+    parser.add_argument('delta', nargs='?', help='Delta XML (optional, Standard: Output-Ordner)')
     parser.add_argument('--dry-run', action='store_true', help='Nur Preview')
     parser.add_argument('--debug', action='store_true', default=DEBUG_MODE, help='Verbose Debug-Modus')
     args = parser.parse_args()
     debug = args.debug
+
+    if any(path is None for path in (args.old, args.new, args.delta)) and any(path is not None for path in (args.old, args.new, args.delta)):
+        parser.error('old, new und delta müssen gemeinsam angegeben werden oder vollständig entfallen')
+
+    if args.old is None:
+        input_files = find_input_files(Path(__file__).resolve().parent / 'Input')
+        args.old, args.new = (str(path) for path in input_files)
+        args.delta = None
+
+    validate_input_files(args.old, args.new)
+    args.old, args.new = order_input_files(args.old, args.new)
+    if args.delta is None:
+        args.delta = default_delta_path(args.old, args.new)
 
     # Laden
     try:
@@ -167,4 +243,12 @@ def main():
         if debug:
             print(f"\n✅ '{args.delta}' geschrieben ({delta_count} Einträge)")
 if __name__ == '__main__':
-    main()
+    output_dir = Path(__file__).resolve().parent / 'Output'
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_path = output_dir / 'xml_delta.txt'
+
+    with log_path.open('w', encoding='utf-8') as log_file:
+        stdout_tee = Tee(sys.stdout, log_file)
+        stderr_tee = Tee(sys.stderr, log_file)
+        with redirect_stdout(stdout_tee), redirect_stderr(stderr_tee):
+            main()
