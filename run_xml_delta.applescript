@@ -1,5 +1,5 @@
 #!/usr/bin/env osascript
--- v0.3.3
+-- v0.3.4
 
 set scriptPath to POSIX path of (path to me)
 set scriptDirectory to do shell script "dirname '" & scriptPath & "'"
@@ -26,7 +26,10 @@ set pythonOutput to do shell script command
 set dialogResult to display dialog "Fertig!" & return & "--------" & return & return & pythonOutput buttons {"Terminal šffnen", "OK"} default button "OK"
 
 if button returned of dialogResult is "Terminal šffnen" then
-	do shell script "open -a Terminal /tmp/xml_delta.log"
+	tell application "Terminal"
+		activate
+		do script "cat " & quoted form of "/tmp/xml_delta.log"
+	end tell
 end if
 
 display notification "Delta: " & deltaFileName with title "? Fertig"
