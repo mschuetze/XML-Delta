@@ -1,4 +1,4 @@
-# v0.4.3
+# v0.4.4
 
 #!/usr/bin/env python3
 from lxml import etree
@@ -18,12 +18,13 @@ def get_text_ns(el, name):
     return (children[0].text or '').strip() if children else ''
 
 
-def detect_structure(root):
-    if root.xpath(".//item"):
-        return 'items', 'item'
-    elif root.xpath(".//speaker"):
-        return 'speakers', 'speaker'
-    raise ValueError("Unbekannte Struktur")
+def detect_structure(*roots):
+    for root in roots:
+        if root.xpath(".//*[local-name()='item']"):
+            return 'items', 'item'
+        if root.xpath(".//*[local-name()='speaker']"):
+            return 'speakers', 'speaker'
+    return 'empty', None
 
 
 def make_key(root, block, block_type):
@@ -44,7 +45,7 @@ def blocks_by_key(root, block_type, debug=False):
     blocks = {}
     if debug:
         print(f"\n📂 {block_type.title()}s sammeln...")
-    for i, block in enumerate(root.xpath(f".//{block_type}"), 1):
+    for i, block in enumerate(root.xpath(f".//*[local-name()='{block_type}']"), 1):
         key = make_key(root, block, block_type)
         if key:
             blocks[key] = block
@@ -95,11 +96,11 @@ def main():
         sys.exit(1)
 
     # Typ erkennen
-    block_type = detect_structure(old_root)[1]
+    block_type = detect_structure(old_root, new_root)[1]
 
     # Blöcke sammeln
-    old_blocks = blocks_by_key(old_root, block_type, debug=debug)
-    new_blocks = blocks_by_key(new_root, block_type, debug=debug)
+    old_blocks = blocks_by_key(old_root, block_type, debug=debug) if block_type else {}
+    new_blocks = blocks_by_key(new_root, block_type, debug=debug) if block_type else {}
 
     if debug:
         print(f"\n📊 XML-Vergleich:\nAltes XML: {len(old_blocks)} Einträge\nNeues XML: {len(new_blocks)} Einträge")
