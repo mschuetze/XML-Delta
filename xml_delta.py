@@ -1,4 +1,4 @@
-# v0.5.0
+# v0.6.0
 
 #!/usr/bin/env python3
 from lxml import etree
@@ -56,6 +56,26 @@ def make_key(root, block, block_type):
     return '::'.join(parts) if parts else None
 
 
+def has_unique_ids(root, block_type):
+    return any(get_text_ns(block, 'uniqueId') for block in root.xpath(f".//*[local-name()='{block_type}']"))
+
+
+def blocks_by_unique_id(root, block_type, debug=False):
+    """Sammelt Blöcke anhand ihrer eindeutigen IDs."""
+    blocks = {}
+    if debug:
+        print(f"\n📂 {block_type.title()}s anhand von uniqueId sammeln...")
+    for i, block in enumerate(root.xpath(f".//*[local-name()='{block_type}']"), 1):
+        unique_id = get_text_ns(block, 'uniqueId')
+        if unique_id:
+            blocks[unique_id] = block
+            if debug:
+                print(f"  {i:2d}. '{unique_id}'")
+        elif debug:
+            print(f"  {i:2d}. [ohne uniqueId]")
+    return blocks
+
+
 def blocks_by_key(root, block_type, debug=False):
     """Zeigt alle gefundenen Blöcke, optional mit Ausgabe."""
     blocks = {}
@@ -90,6 +110,26 @@ def elements_equal(block1, block2, block_type, debug=False):
     if debug:
         print("     ✅ Alle Felder identisch")
     return True
+
+
+def unique_id_fields_equal(block1, block2, debug=False):
+    """Vergleicht im uniqueId-Modus die fachlich relevanten Änderungsfelder."""
+    for field in ['title', 'firstName', 'lastName', 'speakers']:
+        value1 = get_text_ns(block1, field)
+        value2 = get_text_ns(block2, field)
+        if value1 != value2:
+            if debug:
+                print(f"     ❌ '{field}': '{value1}' → '{value2}'")
+            return False
+    if debug:
+        print("     ✅ Titel, Speaker und Sprecher identisch")
+    return True
+
+
+def get_blocks(root, block_type, use_unique_ids, debug=False):
+    if use_unique_ids:
+        return blocks_by_unique_id(root, block_type, debug=debug)
+    return blocks_by_key(root, block_type, debug=debug)
 
 
 def find_input_files(input_dir):
@@ -174,12 +214,22 @@ def main():
     # Typ erkennen
     block_type = detect_structure(old_root, new_root)[1]
 
+    use_unique_ids = bool(
+        block_type
+        and has_unique_ids(old_root, block_type)
+        and has_unique_ids(new_root, block_type)
+    )
+
     # Blöcke sammeln
-    old_blocks = blocks_by_key(old_root, block_type, debug=debug) if block_type else {}
-    new_blocks = blocks_by_key(new_root, block_type, debug=debug) if block_type else {}
+    old_blocks = get_blocks(old_root, block_type, use_unique_ids, debug=debug) if block_type else {}
+    new_blocks = get_blocks(new_root, block_type, use_unique_ids, debug=debug) if block_type else {}
 
     if debug:
         print(f"\n📊 XML-Vergleich:\nAltes XML: {len(old_blocks)} Einträge\nNeues XML: {len(new_blocks)} Einträge")
+    if use_unique_ids:
+        print("\nℹ️  uniqueId in beiden XML erkannt: Abgleich über eindeutige IDs")
+    else:
+        print("\nℹ️  uniqueId nicht in beiden XML erkannt: bisheriger Abgleich")
 
     # Delta zählen
     delta_count = 0
@@ -188,7 +238,11 @@ def main():
         if old_block is None:
             delta_count += 1
         else:
-            changed = not elements_equal(old_block, new_blocks[key], block_type, debug=False)
+            changed = not (
+                unique_id_fields_equal(old_block, new_blocks[key], debug=False)
+                if use_unique_ids
+                else elements_equal(old_block, new_blocks[key], block_type, debug=False)
+            )
             if changed:
                 delta_count += 1
 
@@ -199,32 +253,53 @@ def main():
 
     print(f"\n🔍 Delta-Berechnung...")
 
+    new_entries = []
+    update_entries = []
+    unchanged_entries = []
+
     for key in new_blocks:
         old_block = old_blocks.get(key)
         if old_block is None:
-            if debug:
-                print(f"\n--- Key '{key}' ---")
-                print("  ➕ NEU!")
-            else:
-                print(f"➕ NEU: '{key}'")
+            new_entries.append(key)
             delta_root.append(deepcopy(new_blocks[key]))
         else:
-            changed = not elements_equal(old_block, new_blocks[key], block_type, debug=debug)
+            changed = not (
+                unique_id_fields_equal(old_block, new_blocks[key], debug=False)
+                if use_unique_ids
+                else elements_equal(old_block, new_blocks[key], block_type, debug=False)
+            )
             if changed:
-                if debug:
-                    print("  ✏️  GÄNDERT!")
-                else:
-                    print(f"✏️ GEÄNDERT: '{key}'")
+                update_entries.append(key)
                 delta_root.append(deepcopy(new_blocks[key]))
+            else:
+                unchanged_entries.append(key)
 
     # Gelöschte
-    deleted = set(old_blocks.keys()) - set(new_blocks.keys())
-    if deleted:
-        print(f"\n🗑️  GELÖSCHT ({len(deleted)}):")
-        for d in sorted(deleted):
-            print(f"  - '{d}'")
-    else:
-        print(f"\nℹ️  Keine Löschungen")
+    deleted = sorted(set(old_blocks.keys()) - set(new_blocks.keys()))
+
+    print("\n✅ NEU:")
+    for key in new_entries:
+        print(f"  - '{key}'")
+    if not new_entries:
+        print("  Keine Einträge")
+
+    print("\n✏️ UPDATES:")
+    for key in update_entries:
+        print(f"  - '{key}'")
+    if not update_entries:
+        print("  Keine Einträge")
+
+    print("\n🗑️ GELÖSCHT:")
+    for key in deleted:
+        print(f"  - '{key}'")
+    if not deleted:
+        print("  Keine Einträge")
+
+    print("\nℹ️ UNVERÄNDERT:")
+    for key in unchanged_entries:
+        print(f"  - '{key}'")
+    if not unchanged_entries:
+        print("  Keine Einträge")
 
     # Ausgabe: minified, mit Namespaces erhalten und XML-Deklaration in doppelten Anführungszeichen
     # Erzeuge Bytes, passe ggf. Deklaration an, und schreibe dann als UTF-8 Text

@@ -6,8 +6,10 @@ Script to compare two XML files and create a new file that only contains new dat
 - Prüft die Anzahl der Eingabedateien und akzeptiert ausschließlich Dateien mit der Endung `.xml`.
 - Ermittelt anhand des Erstelldatums automatisch die ältere Datei als `ALT` und die neuere als `NEU`.
 - Erkennt unterstützte XML-Strukturen mit `item`- oder `speaker`-Elementen.
-- Vergleicht Einträge anhand stabiler Schlüssel aus Titeln und Sprechernamen.
+- Vergleicht Einträge über `uniqueId`, wenn dieses Tag in beiden XML-Dateien vorhanden ist; andernfalls werden weiterhin Titel und Sprechernamen als Schlüssel verwendet.
 - Erkennt neue und geänderte Einträge und schreibt ausschließlich diese in die Delta-XML-Datei.
+- Übernimmt bei `uniqueId`-Vergleichen neue IDs ins Delta, meldet nicht mehr vorhandene IDs als gelöscht und protokolliert Änderungen an Titel oder Speaker unter `UPDATES`.
+- Protokolliert unveränderte IDs als Hinweis, übernimmt sie jedoch nicht ins Delta.
 - Gibt gelöschte Einträge im Log aus, übernimmt sie jedoch nicht in die Delta-Datei.
 - Verarbeitet XML-Namespaces, ohne feste Namespace-Präfixe vorauszusetzen.
 - Erhält Root-Element, Attribute, Namespaces und XML-Deklaration des neuen Dokuments.
