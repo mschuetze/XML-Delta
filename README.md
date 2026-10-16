@@ -14,7 +14,7 @@ Script to compare two XML files and create a new file that only contains new dat
 - Verarbeitet XML-Namespaces, ohne feste Namespace-Präfixe vorauszusetzen.
 - Erhält Root-Element, Attribute, Namespaces und XML-Deklaration des neuen Dokuments.
 - Erzeugt die Delta-Datei automatisch im Ordner `Output` mit dem Dateinamen `ALT__NEU__delta.xml`.
-- Erstellt ein plattformübergreifendes Text-Log unter `Output/xml_delta.txt`.
+- Erstellt ein plattformübergreifendes Text-Log unter `Output/Log_<Name-der-neueren-INPUT-Datei-ohne-Erweiterung>.txt`.
 - Unterstützt den ausführlichen `--debug`-Modus und den `--dry-run`-Vorschaumodus.
 - Gibt verständliche Validierungs- und Parsing-Fehler bei ungültigen Eingabedaten aus.
 - Enthält ein macOS-AppleScript für die Ausführung per Doppelklick und das automatische Öffnen des Logs nach erfolgreicher Ausführung.

@@ -1,4 +1,4 @@
-# v0.6.0
+# v0.7.0
 
 #!/usr/bin/env python3
 from lxml import etree
@@ -179,29 +179,12 @@ def default_delta_path(old_path, new_path):
     return str(output_dir / delta_name)
 
 
-def main():
-    parser = argparse.ArgumentParser(description='XML-Delta v1.3')
-    parser.add_argument('old', nargs='?', help='XML-Datei (optional, Standard: Input-Ordner)')
-    parser.add_argument('new', nargs='?', help='XML-Datei (optional, Standard: Input-Ordner)')
-    parser.add_argument('delta', nargs='?', help='Delta XML (optional, Standard: Output-Ordner)')
-    parser.add_argument('--dry-run', action='store_true', help='Nur Preview')
-    parser.add_argument('--debug', action='store_true', default=DEBUG_MODE, help='Verbose Debug-Modus')
-    args = parser.parse_args()
-    debug = args.debug
+def default_log_path(new_path):
+    output_dir = Path(__file__).resolve().parent / 'Output'
+    return output_dir / f"Log_{Path(new_path).stem}.txt"
 
-    if any(path is None for path in (args.old, args.new, args.delta)) and any(path is not None for path in (args.old, args.new, args.delta)):
-        parser.error('old, new und delta müssen gemeinsam angegeben werden oder vollständig entfallen')
 
-    if args.old is None:
-        input_files = find_input_files(Path(__file__).resolve().parent / 'Input')
-        args.old, args.new = (str(path) for path in input_files)
-        args.delta = None
-
-    validate_input_files(args.old, args.new)
-    args.old, args.new = order_input_files(args.old, args.new)
-    if args.delta is None:
-        args.delta = default_delta_path(args.old, args.new)
-
+def run_comparison(args, debug):
     # Laden
     try:
         parser_xml = etree.XMLParser(strip_cdata=False, recover=False)
@@ -317,13 +300,38 @@ def main():
             fh.write(xml_text)
         if debug:
             print(f"\n✅ '{args.delta}' geschrieben ({delta_count} Einträge)")
-if __name__ == '__main__':
+
+
+def main():
+    parser = argparse.ArgumentParser(description='XML-Delta v1.3')
+    parser.add_argument('old', nargs='?', help='XML-Datei (optional, Standard: Input-Ordner)')
+    parser.add_argument('new', nargs='?', help='XML-Datei (optional, Standard: Input-Ordner)')
+    parser.add_argument('delta', nargs='?', help='Delta XML (optional, Standard: Output-Ordner)')
+    parser.add_argument('--dry-run', action='store_true', help='Nur Preview')
+    parser.add_argument('--debug', action='store_true', default=DEBUG_MODE, help='Verbose Debug-Modus')
+    args = parser.parse_args()
+
+    if any(path is None for path in (args.old, args.new, args.delta)) and any(path is not None for path in (args.old, args.new, args.delta)):
+        parser.error('old, new und delta müssen gemeinsam angegeben werden oder vollständig entfallen')
+
+    if args.old is None:
+        input_files = find_input_files(Path(__file__).resolve().parent / 'Input')
+        args.old, args.new = (str(path) for path in input_files)
+        args.delta = None
+
+    validate_input_files(args.old, args.new)
+    args.old, args.new = order_input_files(args.old, args.new)
+    if args.delta is None:
+        args.delta = default_delta_path(args.old, args.new)
+
     output_dir = Path(__file__).resolve().parent / 'Output'
     output_dir.mkdir(parents=True, exist_ok=True)
-    log_path = output_dir / 'xml_delta.txt'
-
-    with log_path.open('w', encoding='utf-8') as log_file:
+    with default_log_path(args.new).open('w', encoding='utf-8') as log_file:
         stdout_tee = Tee(sys.stdout, log_file)
         stderr_tee = Tee(sys.stderr, log_file)
         with redirect_stdout(stdout_tee), redirect_stderr(stderr_tee):
-            main()
+            run_comparison(args, args.debug)
+
+
+if __name__ == '__main__':
+    main()
