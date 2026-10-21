@@ -1,6 +1,9 @@
-# v0.7.0
+# v0.8.0
 
 #!/usr/bin/env python3
+import csv
+import plistlib
+import subprocess
 from lxml import etree
 import sys
 import argparse
@@ -133,31 +136,87 @@ def get_blocks(root, block_type, use_unique_ids, debug=False):
 
 
 def find_input_files(input_dir):
-    xml_files = sorted(
+    return sorted(
         path for path in Path(input_dir).iterdir()
         if path.is_file() and path.suffix.lower() == '.xml'
     )
 
-    if len(xml_files) != 2:
-        print("❌ Im Ordner Input müssen sich exakt 2 XML-Dateien befinden.")
-        print(f"   Gefunden: {len(xml_files)}")
+
+def filename_version(path):
+    match = re.match(
+        r"^(?P<base>.+)\((?P<timestamp>\d{4}_\d{2}_\d{2}-\d{2}_\d{2})\)$",
+        Path(path).stem,
+    )
+    if not match:
+        return None
+    return match.group('base'), match.group('timestamp')
+
+
+def find_input_pairs(input_dir):
+    xml_files = find_input_files(input_dir)
+    if not xml_files:
+        print("❌ Im Ordner Input wurden keine XML-Dateien gefunden.")
         sys.exit(1)
-    return xml_files
+
+    groups = {}
+    for path in xml_files:
+        filename_info = filename_version(path)
+        if filename_info is None:
+            print(f"❌ Dateiname enthält keinen Zeitstempel im erwarteten Format: {path.name}")
+            print("   Erwartet wird ein Suffix wie '(2026_10_21-11_28)'.")
+            sys.exit(1)
+        base, timestamp = filename_info
+        groups.setdefault(base, []).append((timestamp, path))
+
+    pairs = []
+    for base, versions in sorted(groups.items()):
+        if len(versions) != 2:
+            print(f"❌ Für '{base}' müssen genau zwei XML-Dateien vorhanden sein.")
+            print(f"   Gefunden: {len(versions)}")
+            sys.exit(1)
+        versions.sort(key=lambda version: version[0])
+        if versions[0][0] == versions[1][0]:
+            print(f"❌ Die Zeitstempel für '{base}' müssen unterschiedlich sein.")
+            sys.exit(1)
+        pairs.append((versions[0][1], versions[1][1]))
+    return pairs
 
 
 def validate_input_files(old_path, new_path):
-    input_dir = Path(old_path).resolve().parent
-    xml_files = find_input_files(input_dir)
-
-    selected_files = {Path(old_path).resolve(), Path(new_path).resolve()}
-    if selected_files != set(xml_files):
-        print("❌ Es müssen genau die beiden XML-Dateien aus dem Ordner Input verwendet werden.")
+    old_file = Path(old_path).resolve()
+    new_file = Path(new_path).resolve()
+    if old_file == new_file:
+        print("❌ ALT und NEU müssen unterschiedliche Dateien sein.")
+        sys.exit(1)
+    if not old_file.is_file() or not new_file.is_file():
+        print("❌ Die angegebenen XML-Dateien müssen existieren.")
+        sys.exit(1)
+    if old_file.suffix.lower() != '.xml' or new_file.suffix.lower() != '.xml':
+        print("❌ Es können nur XML-Dateien verglichen werden.")
+        sys.exit(1)
+    old_version = filename_version(old_file)
+    new_version = filename_version(new_file)
+    if (old_version is None) != (new_version is None):
+        print("❌ Beide Dateinamen müssen entweder einen Zeitstempel enthalten oder keinen.")
+        sys.exit(1)
+    if old_version and new_version and old_version[0] != new_version[0]:
+        print("❌ Die Dateinamen gehören nicht zur selben XML-Dateigruppe.")
         sys.exit(1)
 
 
 def order_input_files(old_path, new_path):
     old_file = Path(old_path).resolve()
     new_file = Path(new_path).resolve()
+    old_version = filename_version(old_file)
+    new_version = filename_version(new_file)
+    if old_version and new_version:
+        if old_version[1] == new_version[1]:
+            print("❌ Die Zeitstempel der beiden XML-Dateien sind identisch.")
+            sys.exit(1)
+        if old_version[1] > new_version[1]:
+            return str(new_file), str(old_file)
+        return str(old_file), str(new_file)
+
     old_stat = old_file.stat()
     new_stat = new_file.stat()
     old_creation_time = getattr(old_stat, 'st_birthtime', old_stat.st_ctime)
@@ -182,6 +241,163 @@ def default_delta_path(old_path, new_path):
 def default_log_path(new_path):
     output_dir = Path(__file__).resolve().parent / 'Output'
     return output_dir / f"Log_{Path(new_path).stem}.txt"
+
+
+def local_name(tag):
+    return etree.QName(tag).localname
+
+
+def add_csv_value(row, key, value):
+    if key not in row:
+        row[key] = value
+        return
+
+    suffix = 2
+    candidate = f"{key}_{suffix}"
+    while candidate in row:
+        suffix += 1
+        candidate = f"{key}_{suffix}"
+    row[candidate] = value
+
+
+def flatten_element(element, prefix=''):
+    row = {}
+    for name, value in element.attrib.items():
+        add_csv_value(row, f"{prefix}@{local_name(name)}", value)
+
+    children = list(element)
+    text = (element.text or '').strip()
+    if text and not children:
+        add_csv_value(row, prefix or local_name(element.tag), text)
+
+    for child in children:
+        child_name = local_name(child.tag)
+        child_prefix = f"{prefix}.{child_name}" if prefix else child_name
+        for key, value in flatten_element(child, child_prefix).items():
+            add_csv_value(row, key, value)
+    return row
+
+
+def repeated_children(parent):
+    children = list(parent)
+    for child in children:
+        same_tag = [
+            candidate for candidate in children
+            if local_name(candidate.tag) == local_name(child.tag)
+        ]
+        if len(same_tag) > 1:
+            return same_tag
+    return []
+
+
+def find_csv_records(root):
+    records = repeated_children(root)
+    if records:
+        return records
+
+    for parent in root.iter():
+        records = repeated_children(parent)
+        if records:
+            return records
+
+    children = list(root)
+    return children or [root]
+
+
+def set_finder_tag(csv_path, has_entries):
+    if sys.platform != 'darwin':
+        return None
+
+    attribute = 'com.apple.metadata:_kMDItemUserTags'
+    tag_name = 'XML-Delta: Einträge' if has_entries else 'XML-Delta: leer'
+    color = 2 if has_entries else 6
+    path = str(csv_path)
+    attributes = subprocess.run(
+        ['xattr', path],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    if attribute in attributes:
+        encoded_tags = subprocess.run(
+            ['xattr', '-p', '-x', attribute, path],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        existing_tags = plistlib.loads(bytes.fromhex(encoded_tags))
+        if not isinstance(existing_tags, list) or not all(isinstance(tag, str) for tag in existing_tags):
+            raise ValueError(f"Ungültige Finder-Tags auf '{csv_path}'.")
+    else:
+        existing_tags = []
+
+    tags = [
+        tag for tag in existing_tags
+        if tag.split('\n', 1)[0] not in {'XML-Delta: Einträge', 'XML-Delta: leer'}
+    ]
+    tags.append(f"{tag_name}\n{color}")
+    subprocess.run(
+        ['xattr', '-w', '-x', attribute, plistlib.dumps(tags, fmt=plistlib.FMT_BINARY).hex(), path],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return tag_name
+
+
+def convert_xml_to_csv(source_path, has_entries):
+    source = Path(source_path)
+    root = etree.parse(str(source)).getroot()
+    rows = [flatten_element(record) for record in find_csv_records(root)] if has_entries else []
+
+    fieldnames = []
+    for row in rows:
+        for key in row:
+            if key not in fieldnames:
+                fieldnames.append(key)
+
+    destination = source.with_name(f"{source.stem}_UTF-16.csv")
+    with destination.open('w', encoding='utf-16', newline='') as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames, extrasaction='ignore')
+        if fieldnames:
+            writer.writeheader()
+            writer.writerows(rows)
+    return destination
+
+
+def comparison_heading(old_path):
+    base = filename_version(old_path)
+    name = base[0] if base else Path(old_path).stem
+    name = name.casefold()
+    for keyword, heading in (
+        ('sessions', 'Sessions'),
+        ('keynotes', 'Keynotes'),
+        ('workshops', 'Workshops'),
+        ('speaker', 'Speaker'),
+    ):
+        if keyword in name:
+            return heading
+    return name
+
+
+def run_logged_comparisons(comparisons, debug, dry_run, log_path):
+    with log_path.open('w', encoding='utf-8') as log_file:
+        stdout_tee = Tee(sys.stdout, log_file)
+        stderr_tee = Tee(sys.stderr, log_file)
+        with redirect_stdout(stdout_tee), redirect_stderr(stderr_tee):
+            for old_path, new_path, delta_path in comparisons:
+                args = argparse.Namespace(
+                    old=old_path,
+                    new=new_path,
+                    delta=delta_path,
+                    dry_run=dry_run,
+                )
+                heading = comparison_heading(old_path)
+                print(f"\n{'=' * 70}")
+                print(f"{heading.upper():^70}")
+                print(f"{'=' * 70}")
+                print(f"Vergleich: {Path(old_path).name} → {Path(new_path).name}")
+                run_comparison(args, debug)
 
 
 def run_comparison(args, debug):
@@ -298,6 +514,17 @@ def run_comparison(args, debug):
     else:
         with open(args.delta, 'w', encoding='utf-8') as fh:
             fh.write(xml_text)
+        has_entries = len(delta_root) > 0
+        csv_path = convert_xml_to_csv(args.delta, has_entries)
+        print(f"\n📄 CSV erstellt: '{csv_path}'")
+        try:
+            finder_tag = set_finder_tag(csv_path, has_entries)
+        except (OSError, subprocess.CalledProcessError, plistlib.InvalidFileException, ValueError) as error:
+            details = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) and error.stderr else str(error)
+            print(f"⚠️ Finder-Farbe konnte nicht gesetzt werden: {details}")
+        else:
+            if finder_tag:
+                print(f"🏷️ Finder-Tag: {finder_tag}")
         if debug:
             print(f"\n✅ '{args.delta}' geschrieben ({delta_count} Einträge)")
 
@@ -314,23 +541,34 @@ def main():
     if any(path is None for path in (args.old, args.new, args.delta)) and any(path is not None for path in (args.old, args.new, args.delta)):
         parser.error('old, new und delta müssen gemeinsam angegeben werden oder vollständig entfallen')
 
-    if args.old is None:
-        input_files = find_input_files(Path(__file__).resolve().parent / 'Input')
-        args.old, args.new = (str(path) for path in input_files)
-        args.delta = None
-
-    validate_input_files(args.old, args.new)
-    args.old, args.new = order_input_files(args.old, args.new)
-    if args.delta is None:
-        args.delta = default_delta_path(args.old, args.new)
-
     output_dir = Path(__file__).resolve().parent / 'Output'
     output_dir.mkdir(parents=True, exist_ok=True)
-    with default_log_path(args.new).open('w', encoding='utf-8') as log_file:
-        stdout_tee = Tee(sys.stdout, log_file)
-        stderr_tee = Tee(sys.stderr, log_file)
-        with redirect_stdout(stdout_tee), redirect_stderr(stderr_tee):
-            run_comparison(args, args.debug)
+
+    if args.old is None:
+        input_dir = Path(__file__).resolve().parent / 'Input'
+        pairs = find_input_pairs(input_dir)
+        comparisons = []
+        for old_path, new_path in pairs:
+            old_path, new_path = order_input_files(old_path, new_path)
+            comparisons.append((
+                str(old_path),
+                str(new_path),
+                default_delta_path(old_path, new_path),
+            ))
+        newest_input = max(
+            (new_path for _, new_path, _ in comparisons),
+            key=lambda path: filename_version(path)[1],
+        )
+        log_path = output_dir / f"Log_Batch_{Path(newest_input).stem}.txt"
+    else:
+        validate_input_files(args.old, args.new)
+        args.old, args.new = order_input_files(args.old, args.new)
+        if args.delta is None:
+            args.delta = default_delta_path(args.old, args.new)
+        comparisons = [(args.old, args.new, args.delta)]
+        log_path = default_log_path(args.new)
+
+    run_logged_comparisons(comparisons, args.debug, args.dry_run, log_path)
 
 
 if __name__ == '__main__':
